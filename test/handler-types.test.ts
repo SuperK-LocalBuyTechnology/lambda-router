@@ -30,6 +30,10 @@ describe("ErrorObject", () => {
         it("returns false for an object missing statusCode or message", () => {
             expect(ErrorObject.isErrorObject({ success: true })).toBe(false);
         });
+
+        it("returns false when statusCode/message have the wrong types", () => {
+            expect(ErrorObject.isErrorObject({ statusCode: "shipped", message: "Order placed" })).toBe(false);
+        });
     });
 
     describe("getErrorObjectFromError", () => {

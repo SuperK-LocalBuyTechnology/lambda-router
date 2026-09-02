@@ -16,7 +16,11 @@ export class ErrorObject {
         if (typeof value === "boolean" || typeof value === "number" || typeof value === "string") {
             return false;
         }
-        return value instanceof ErrorObject || ("statusCode" in (value as object) && "message" in (value as object));
+        return (
+            value instanceof ErrorObject ||
+            (typeof (value as { statusCode?: unknown }).statusCode === "number" &&
+                typeof (value as { message?: unknown }).message === "string")
+        );
     }
 
     static getErrorObjectFromError(error: unknown, logError: boolean = true): ErrorObject {
