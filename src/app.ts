@@ -2,7 +2,7 @@ import { Handler } from "./handler-types";
 import { RequestMapper } from "./request-mapper";
 import { APIHandlerMap, APIMap, APIOptions } from "./types";
 
-const DEFAULT_OPTIONS: APIOptions = { authType: "ALLOW_AUTHENTICATED_CLIENTS" };
+const DEFAULT_OPTIONS: APIOptions = Object.freeze({ authType: "ALLOW_AUTHENTICATED_CLIENTS" });
 
 export class App {
     APIS: {
