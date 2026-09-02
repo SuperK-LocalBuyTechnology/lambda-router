@@ -111,4 +111,37 @@ describe("createApiHandler", () => {
 
         expect(logEvent).toHaveBeenCalledWith(event);
     });
+
+    it("routes an authorizeRequest throw through formatError", async () => {
+        const app = new App();
+        app.get("/widgets", { requestMapper: () => ({}) }, async () => ({ ok: true }));
+        const handler = createApiHandler({
+            app,
+            authorizeRequest: async () => {
+                throw new Error("auth blew up");
+            },
+        });
+
+        const result = await handler(fakeEvent(), fakeContext, undefined as any);
+
+        expect(result?.statusCode).toBe(500);
+    });
+
+    it("routes a requestMapper throw through formatError", async () => {
+        const app = new App();
+        app.get(
+            "/widgets",
+            {
+                requestMapper: () => {
+                    throw new Error("bad request shape");
+                },
+            },
+            async () => ({ ok: true })
+        );
+        const handler = createApiHandler({ app, authorizeRequest: async () => ({}) });
+
+        const result = await handler(fakeEvent(), fakeContext, undefined as any);
+
+        expect(result?.statusCode).toBe(500);
+    });
 });

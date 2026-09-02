@@ -31,17 +31,17 @@ export function createApiHandler<TAuthCtx>({
     formatError = defaultFormatError,
 }: CreateApiHandlerOptions<TAuthCtx>): APIGatewayProxyHandler {
     return async (event: APIGatewayProxyEvent, context: Context): Promise<APIGatewayProxyResult> => {
-        logEvent?.(event);
-
-        const matched = app.getHandler(event.httpMethod, event.resource);
-        if (!matched) {
-            return {
-                statusCode: 404,
-                body: JSON.stringify({ message: `There is no handler registered for this ${event.resource}.` }),
-            };
-        }
-
         try {
+            logEvent?.(event);
+
+            const matched = app.getHandler(event.httpMethod, event.resource);
+            if (!matched) {
+                return {
+                    statusCode: 404,
+                    body: JSON.stringify({ message: `There is no handler registered for this ${event.resource}.` }),
+                };
+            }
+
             const authResult = await authorizeRequest(event, matched.options);
             if (ErrorObject.isErrorObject(authResult)) {
                 return errorResponse(authResult);
