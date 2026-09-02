@@ -3,6 +3,9 @@
     "description": "A typed, minimal routing framework for AWS Lambda functions behind API Gateway.",
     "version": "0.1.0",
     "license": "MIT",
+    "publishConfig": {
+        "access": "public"
+    },
     "main": "./dist/index.js",
     "types": "./dist/index.d.ts",
     "files": [
