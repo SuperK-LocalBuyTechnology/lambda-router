@@ -144,4 +144,17 @@ describe("createApiHandler", () => {
 
         expect(result?.statusCode).toBe(500);
     });
+    it("honors a thrown ErrorObject without calling formatError", async () => {
+        const app = new App();
+        app.get("/widgets", { requestMapper: () => ({}) }, async () => {
+            throw new ErrorObject(404, "Not found");
+        });
+        const formatError = jest.fn();
+        const handler = createApiHandler({ app, authorizeRequest: async () => ({}), formatError });
+
+        const result = await handler(fakeEvent(), fakeContext, undefined as any);
+
+        expect(result).toEqual({ statusCode: 404, body: JSON.stringify({ message: "Not found" }) });
+        expect(formatError).not.toHaveBeenCalled();
+    });
 });

@@ -48,12 +48,15 @@ export function createApiHandler<TAuthCtx>({
             }
 
             const request = matched.requestMapper.requestMapper(event);
-            const result = await matched.handler(request, authResult as TAuthCtx, context);
+            const result = await matched.handler(request, authResult, context);
             if (ErrorObject.isErrorObject(result)) {
                 return errorResponse(result);
             }
             return { statusCode: 200, body: JSON.stringify(result) };
         } catch (error) {
+            if (ErrorObject.isErrorObject(error)) {
+                return errorResponse(error);
+            }
             return formatError(error);
         }
     };
