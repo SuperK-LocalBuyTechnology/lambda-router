@@ -3,6 +3,21 @@
     "description": "A typed, minimal routing framework for AWS Lambda functions behind API Gateway.",
     "version": "0.1.0",
     "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/SuperK-LocalBuyTechnology/lambda-router.git"
+    },
+    "homepage": "https://github.com/SuperK-LocalBuyTechnology/lambda-router#readme",
+    "bugs": {
+        "url": "https://github.com/SuperK-LocalBuyTechnology/lambda-router/issues"
+    },
+    "author": "SuperK-LocalBuyTechnology",
+    "engines": {
+        "node": ">=18"
+    },
+    "publishConfig": {
+        "access": "public"
+    },
     "main": "./dist/index.js",
     "types": "./dist/index.d.ts",
     "files": [
@@ -17,6 +32,7 @@
     ],
     "scripts": {
         "build": "tsup",
+        "prepublishOnly": "npm run build && npm test",
         "clean": "rm -rf node_modules && rm -rf package-lock.json && npm install",
         "watch": "tsc -w",
         "test": "jest",
