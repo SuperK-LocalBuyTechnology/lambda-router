@@ -20,6 +20,7 @@
     ],
     "scripts": {
         "build": "tsup",
+        "prepublishOnly": "npm run build && npm test",
         "clean": "rm -rf node_modules && rm -rf package-lock.json && npm install",
         "watch": "tsc -w",
         "test": "jest",
