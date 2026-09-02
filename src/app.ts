@@ -3,7 +3,7 @@ import { RequestMapper } from "./request-mapper";
 import { APIHandlerMap, APIMap, APIOptions } from "./types";
 
 const DEFAULT_OPTIONS: Readonly<APIOptions> = Object.freeze({ authType: "ALLOW_AUTHENTICATED_CLIENTS" });
-type HTTPMethod = "GET" | "POST" | "PUT" | "DELETE";
+export type HTTPMethod = "GET" | "POST" | "PUT" | "DELETE";
 
 export class App {
     APIS: {
