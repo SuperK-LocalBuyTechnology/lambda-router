@@ -14,9 +14,6 @@ export default defineConfig([
         languageOptions: {
             globals: { ...globals.node, ...globals.jest },
         },
-        rules: {
-            "@typescript-eslint/no-explicit-any": "off",
-        },
     },
     tseslint.configs.recommended,
     prettierConfig,
@@ -26,6 +23,7 @@ export default defineConfig([
         rules: {
             "prettier/prettier": "error",
             "no-unused-vars": "off",
+            "@typescript-eslint/no-explicit-any": "off",
             "@typescript-eslint/no-unused-vars": [
                 "error",
                 {
