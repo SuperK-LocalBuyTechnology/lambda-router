@@ -53,7 +53,11 @@ app.get("/widgets/{widgetId}", new GetWidgetMapper(), getWidgetHandler);
 
 export const apiHandler = createApiHandler<AuthContext>({
     app,
-    authorizeRequest: async (event) => {
+    authorizeRequest: async (event, options) => {
+        if (options.authType === "ALLOW_UNAUTHENTICATED") {
+            return { userId: "anonymous" };
+        }
+
         const userId = event.requestContext.authorizer?.claims?.sub;
         if (!userId) {
             return new ErrorObject(401, "Unauthorized");
@@ -67,6 +71,13 @@ Wire `apiHandler` up as your Lambda's handler, and configure API Gateway with on
 resource per route (e.g. `/widgets/{widgetId}`) using a Lambda-proxy integration —
 `App.getHandler` matches on the API Gateway *resource template* (`event.resource`), so
 each registered path needs its own backing resource.
+
+`createApiHandler` also accepts two optional hooks: `logEvent`, called with the raw
+incoming event before anything else runs, and `formatError`, which controls how an
+unrecognized thrown value is turned into a response (it defaults to a generic 500). A
+handler may either `return` an `ErrorObject` or `throw` one — both produce the same
+formatted error response (the thrown-`ErrorObject` case is honored before `formatError`
+ever runs), while any other thrown value is passed to `formatError`.
 
 ## What this is not (yet)
 
