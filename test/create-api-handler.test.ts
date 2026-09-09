@@ -184,3 +184,171 @@ describe("createApiHandler", () => {
         expect(formatError).not.toHaveBeenCalled();
     });
 });
+
+describe("createApiHandler request metrics", () => {
+    const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    const contextWithId = { awsRequestId: "req-123" } as Context;
+
+    it("reports a success with both phase timings and the request id", async () => {
+        const app = new App();
+        app.get("/widgets", { requestMapper: () => ({}) }, async () => ({ ok: true }));
+        const onMetrics = jest.fn();
+        const handler = createApiHandler({ app, authorizeRequest: async () => ({}), onMetrics });
+
+        await handler(fakeEvent(), contextWithId, undefined as any);
+
+        expect(onMetrics).toHaveBeenCalledTimes(1);
+        expect(onMetrics.mock.calls[0][0]).toMatchObject({
+            method: "GET",
+            resource: "/widgets",
+            statusCode: 200,
+            outcome: "success",
+            requestId: "req-123",
+        });
+        const metrics = onMetrics.mock.calls[0][0];
+        expect(typeof metrics.authorizeMs).toBe("number");
+        expect(typeof metrics.handlerMs).toBe("number");
+        expect(typeof metrics.totalMs).toBe("number");
+    });
+
+    it("actually measures elapsed time rather than reporting a constant", async () => {
+        const app = new App();
+        app.get("/widgets", { requestMapper: () => ({}) }, async () => {
+            await sleep(30);
+            return { ok: true };
+        });
+        const onMetrics = jest.fn();
+        const handler = createApiHandler({
+            app,
+            authorizeRequest: async () => {
+                await sleep(30);
+                return {};
+            },
+            onMetrics,
+        });
+
+        await handler(fakeEvent(), contextWithId, undefined as any);
+
+        const metrics = onMetrics.mock.calls[0][0];
+        expect(metrics.authorizeMs).toBeGreaterThanOrEqual(20);
+        expect(metrics.handlerMs).toBeGreaterThanOrEqual(20);
+        expect(metrics.totalMs).toBeGreaterThanOrEqual(metrics.authorizeMs + metrics.handlerMs);
+    });
+
+    it("reports a 404 with no phase timings", async () => {
+        const app = new App();
+        const onMetrics = jest.fn();
+        const handler = createApiHandler({ app, authorizeRequest: async () => ({}), onMetrics });
+
+        await handler(fakeEvent({ resource: "/unknown" }), contextWithId, undefined as any);
+
+        expect(onMetrics.mock.calls[0][0]).toMatchObject({
+            resource: "/unknown",
+            statusCode: 404,
+            outcome: "not_found",
+        });
+        expect(onMetrics.mock.calls[0][0].authorizeMs).toBeUndefined();
+        expect(onMetrics.mock.calls[0][0].handlerMs).toBeUndefined();
+    });
+
+    it("reports a rejected authorization as unauthorized, with no handler timing", async () => {
+        const app = new App();
+        app.get("/widgets", { requestMapper: () => ({}) }, async () => ({ ok: true }));
+        const onMetrics = jest.fn();
+        const handler = createApiHandler({
+            app,
+            authorizeRequest: async () => new ErrorObject(403, "Forbidden"),
+            onMetrics,
+        });
+
+        await handler(fakeEvent(), contextWithId, undefined as any);
+
+        expect(onMetrics.mock.calls[0][0]).toMatchObject({ statusCode: 403, outcome: "unauthorized" });
+        expect(typeof onMetrics.mock.calls[0][0].authorizeMs).toBe("number");
+        expect(onMetrics.mock.calls[0][0].handlerMs).toBeUndefined();
+    });
+
+    it("reports an ErrorObject returned by the handler as handler_error", async () => {
+        const app = new App();
+        app.get("/widgets", { requestMapper: () => ({}) }, async () => new ErrorObject(422, "Bad input"));
+        const onMetrics = jest.fn();
+        const handler = createApiHandler({ app, authorizeRequest: async () => ({}), onMetrics });
+
+        await handler(fakeEvent(), contextWithId, undefined as any);
+
+        expect(onMetrics.mock.calls[0][0]).toMatchObject({ statusCode: 422, outcome: "handler_error" });
+    });
+
+    it("still records handler timing when the handler throws", async () => {
+        const app = new App();
+        app.get("/widgets", { requestMapper: () => ({}) }, async () => {
+            await sleep(30);
+            throw new Error("boom");
+        });
+        const onMetrics = jest.fn();
+        const handler = createApiHandler({ app, authorizeRequest: async () => ({}), onMetrics });
+
+        await handler(fakeEvent(), contextWithId, undefined as any);
+
+        const metrics = onMetrics.mock.calls[0][0];
+        expect(metrics.outcome).toBe("unhandled_error");
+        expect(metrics.statusCode).toBe(500);
+        expect(metrics.handlerMs).toBeGreaterThanOrEqual(20);
+    });
+
+    it("takes the status code from a custom formatError", async () => {
+        const app = new App();
+        app.get("/widgets", { requestMapper: () => ({}) }, async () => {
+            throw new Error("boom");
+        });
+        const onMetrics = jest.fn();
+        const handler = createApiHandler({
+            app,
+            authorizeRequest: async () => ({}),
+            onMetrics,
+            formatError: () => ({ statusCode: 503, body: "unavailable" }),
+        });
+
+        await handler(fakeEvent(), contextWithId, undefined as any);
+
+        expect(onMetrics.mock.calls[0][0]).toMatchObject({ statusCode: 503, outcome: "unhandled_error" });
+    });
+
+    it("does not let a throwing onMetrics break the response", async () => {
+        const app = new App();
+        app.get("/widgets", { requestMapper: () => ({}) }, async () => ({ ok: true }));
+        const consoleError = jest.spyOn(console, "error").mockImplementation(() => {});
+        const handler = createApiHandler({
+            app,
+            authorizeRequest: async () => ({}),
+            onMetrics: () => {
+                throw new Error("metrics backend down");
+            },
+        });
+
+        const result = await handler(fakeEvent(), contextWithId, undefined as any);
+
+        expect(result?.statusCode).toBe(200);
+        expect(JSON.parse(result!.body)).toEqual({ ok: true });
+        expect(consoleError).toHaveBeenCalled();
+        consoleError.mockRestore();
+    });
+
+    it("logs a single tagged JSON line by default", async () => {
+        const app = new App();
+        app.get("/widgets", { requestMapper: () => ({}) }, async () => ({ ok: true }));
+        const consoleLog = jest.spyOn(console, "log").mockImplementation(() => {});
+        const handler = createApiHandler({ app, authorizeRequest: async () => ({}) });
+
+        await handler(fakeEvent(), contextWithId, undefined as any);
+
+        expect(consoleLog).toHaveBeenCalledTimes(1);
+        expect(JSON.parse(consoleLog.mock.calls[0][0] as string)).toMatchObject({
+            msg: "api-metrics",
+            outcome: "success",
+            statusCode: 200,
+            requestId: "req-123",
+        });
+        consoleLog.mockRestore();
+    });
+});

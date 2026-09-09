@@ -71,3 +71,33 @@ describe("ErrorObject", () => {
         });
     });
 });
+
+describe("ErrorObject.getErrorObjectFromError AWS status codes", () => {
+    beforeEach(() => {
+        jest.spyOn(console, "error").mockImplementation(() => {});
+    });
+    afterEach(() => {
+        jest.restoreAllMocks();
+    });
+
+    it("preserves the HTTP status an AWS SDK ServiceException carries on $response", () => {
+        const serviceException = Object.assign(new Error("Rate exceeded"), {
+            $response: { statusCode: 429 },
+        });
+
+        const errorObject = ErrorObject.getErrorObjectFromError(serviceException);
+
+        expect(errorObject.statusCode).toBe(429);
+        expect(errorObject.message).toBe("Rate exceeded");
+    });
+
+    it("falls back to 500 for a plain Error", () => {
+        expect(ErrorObject.getErrorObjectFromError(new Error("boom")).statusCode).toBe(500);
+    });
+
+    it("falls back to 500 when $response exists but carries no status code", () => {
+        const partialException = Object.assign(new Error("no status"), { $response: {} });
+
+        expect(ErrorObject.getErrorObjectFromError(partialException).statusCode).toBe(500);
+    });
+});
