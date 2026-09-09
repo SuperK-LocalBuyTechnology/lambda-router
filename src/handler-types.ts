@@ -28,7 +28,11 @@ export class ErrorObject {
             console.error("ErrorObject.getErrorObjectFromError: returning because of an error", error);
         }
         if (error instanceof Error) {
-            return new ErrorObject(500, error.message);
+            // AWS SDK v3 ServiceExceptions carry the real HTTP status on `$response`.
+            // Duck-typed so this package needs no AWS SDK dependency, and so it works
+            // for every SDK client rather than the handful we could name here.
+            const responseStatusCode = (error as { $response?: { statusCode?: number } }).$response?.statusCode;
+            return new ErrorObject(typeof responseStatusCode === "number" ? responseStatusCode : 500, error.message);
         }
         if (
             typeof error === "object" &&

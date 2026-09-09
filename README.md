@@ -72,12 +72,48 @@ resource per route (e.g. `/widgets/{widgetId}`) using a Lambda-proxy integration
 `App.getHandler` matches on the API Gateway *resource template* (`event.resource`), so
 each registered path needs its own backing resource.
 
-`createApiHandler` also accepts two optional hooks: `logEvent`, called with the raw
+`createApiHandler` also accepts three optional hooks: `logEvent`, called with the raw
 incoming event before anything else runs, and `formatError`, which controls how an
 unrecognized thrown value is turned into a response (it defaults to a generic 500). A
 handler may either `return` an `ErrorObject` or `throw` one — both produce the same
 formatted error response (the thrown-`ErrorObject` case is honored before `formatError`
 ever runs), while any other thrown value is passed to `formatError`.
+
+## Request metrics
+
+Every request emits one `RequestMetrics` record, on every path — including 404s, rejected
+authorization, and thrown errors. By default it is written as a single tagged JSON line:
+
+```json
+{"msg":"api-metrics","method":"GET","resource":"/widgets/{widgetId}","statusCode":200,"outcome":"success","authorizeMs":12,"handlerMs":84,"totalMs":97,"requestId":"..."}
+```
+
+One line of JSON rather than several of free text means CloudWatch Logs Insights can query
+it directly:
+
+```
+fields resource, handlerMs
+| filter msg = "api-metrics"
+| stats avg(handlerMs), max(handlerMs), count(*) by resource, outcome
+```
+
+`outcome` is one of `success`, `not_found`, `unauthorized`, `handler_error`, or
+`unhandled_error`, so slow handlers, unauthorized clients and genuine faults stay
+distinguishable in a single query. `authorizeMs` and `handlerMs` are recorded even when
+that phase throws — a failing call's duration is usually the one you most want.
+
+Pass `onMetrics` to send the record somewhere else, or to enrich it:
+
+```ts
+export const apiHandler = createApiHandler<AuthContext>({
+    app,
+    authorizeRequest,
+    onMetrics: (metrics) => console.log(JSON.stringify({ msg: "api-metrics", ...metrics, cache: cache.getStats() })),
+});
+```
+
+Throwing from `onMetrics` is caught and logged rather than propagated: instrumentation
+must never turn a 200 into a 500.
 
 ## What this is not (yet)
 
