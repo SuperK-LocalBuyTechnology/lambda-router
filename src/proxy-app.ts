@@ -39,10 +39,10 @@ export interface MatchedProxyRoute<TRequest, TResponse, TAuthCtx> {
  * module, so the `{param}`-as-API-Gateway-resource convention the resource-mode servers
  * rely on is untouched.
  *
- * **Matching is first-registered-wins**, the same rule Express applies. path-to-regexp
- * applies no precedence of its own: `/orders/{orderId}` will happily match `/orders/new`.
- * A route with a literal segment that could also match a parameterised one must therefore
- * be registered first.
+ * Routes cannot overlap. path-to-regexp applies no precedence of its own, so
+ * `/orders/{orderId}` would happily match `/orders/new` and the winner would come down to
+ * which was registered first. Registering a route that could match the same request as an
+ * existing one throws instead, which leaves matching order-independent.
  */
 export class ProxyApp {
     private routes: ProxyRoute[] = [];
@@ -90,10 +90,12 @@ export class ProxyApp {
         handler: Handler<TRequest, TResponse, TAuthCtx>,
         options: APIOptions
     ) {
+        const matcher = compileMatcher(method, path);
+        assertNoOverlap(this.routes, method, path);
         this.routes.push({
             method,
             path,
-            matcher: compileMatcher(method, path),
+            matcher,
             requestMapper: requestMapper as RequestMapper<unknown>,
             handler: handler as unknown as Handler<never, unknown, never>,
             options,
@@ -137,6 +139,49 @@ export class ProxyApp {
 
 const PARAM_NAME = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 const RAW_PARAM_SYNTAX = /:[A-Za-z_$][A-Za-z0-9_$]*/;
+const PARAM_SEGMENT = /^\{[^}]+\}$/;
+
+/**
+ * Rejects a route that could match the same request path as one already registered —
+ * `/order/new` against `/order/{orderId}`, say.
+ *
+ * Matching scans in registration order, so an overlapping pair does not fail, it just
+ * resolves to whichever was registered first. That makes behaviour depend on the order
+ * of lines in a registry file, which is a poor thing to discover in production. Refusing
+ * the pair outright makes matching order-independent by construction.
+ *
+ * Two routes overlap when they have the same number of segments and no position holds
+ * two different literals — a parameter matches any single segment, so it overlaps
+ * whatever sits opposite it. `/order/new` and `/order/old` are therefore fine, and so
+ * are `/order/{id}/items` and `/order/new/history`.
+ */
+function assertNoOverlap(routes: ProxyRoute[], method: HTTPMethod, path: string): void {
+    const segments = path.split("/");
+    for (const route of routes) {
+        if (route.method !== method) {
+            continue;
+        }
+        const existing = route.path.split("/");
+        if (existing.length !== segments.length) {
+            continue;
+        }
+        const overlaps = segments.every(
+            (segment, index) =>
+                PARAM_SEGMENT.test(segment) || PARAM_SEGMENT.test(existing[index]) || segment === existing[index]
+        );
+        if (!overlaps) {
+            continue;
+        }
+        if (route.path === path) {
+            throw new Error(`lambda-router: cannot register ${method} ${path} — it is already registered.`);
+        }
+        throw new Error(
+            `lambda-router: cannot register ${method} ${path} — it overlaps ${method} ${route.path}, which is ` +
+                `already registered. A request can match both, so which one handles it would depend on the ` +
+                `order these were registered in. Give them paths that cannot match the same request.`
+        );
+    }
+}
 
 /**
  * Validates a route as the caller wrote it, then compiles it.

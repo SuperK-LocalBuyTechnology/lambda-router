@@ -47,22 +47,22 @@ describe("ProxyApp", () => {
         expect(app.getHandler("put", "/orders/o1")).toBeDefined();
     });
 
-    it("resolves ambiguity by registration order, not by literal-beats-parameter", () => {
+    it("refuses a route that could match the same request as an existing one", () => {
+        const app = new ProxyApp();
+        app.get("/orders/{orderId}", noopMapper, noopHandler);
+
+        expect(() => app.get("/orders/new", noopMapper, noopHandler)).toThrow(
+            "lambda-router: cannot register GET /orders/new — it overlaps GET /orders/{orderId}, which is " +
+                "already registered. A request can match both, so which one handles it would depend on the " +
+                "order these were registered in. Give them paths that cannot match the same request."
+        );
+    });
+
+    it("refuses the overlapping pair in either registration order", () => {
         const literalFirst = new ProxyApp();
         literalFirst.get("/orders/new", noopMapper, noopHandler);
-        literalFirst.get("/orders/{orderId}", noopMapper, noopHandler);
 
-        expect(literalFirst.getHandler("GET", "/orders/new")?.path).toBe("/orders/new");
-
-        // Registered the other way round the parameterised route wins, because
-        // path-to-regexp applies no precedence of its own. This is the documented rule,
-        // and the reason a literal route must be registered first.
-        const paramFirst = new ProxyApp();
-        paramFirst.get("/orders/{orderId}", noopMapper, noopHandler);
-        paramFirst.get("/orders/new", noopMapper, noopHandler);
-
-        expect(paramFirst.getHandler("GET", "/orders/new")?.path).toBe("/orders/{orderId}");
-        expect(paramFirst.getHandler("GET", "/orders/new")?.pathParameters).toEqual({ orderId: "new" });
+        expect(() => literalFirst.get("/orders/{orderId}", noopMapper, noopHandler)).toThrow("it overlaps");
     });
 
     it("URL-decodes captured parameters, as API Gateway does for resource routes", () => {
@@ -141,5 +141,67 @@ describe("ProxyApp route validation", () => {
         expect(() => app.post("/a/{b+}", noopMapper, noopHandler)).toThrow("not supported");
         expect(() => app.put("/a/{b+}", noopMapper, noopHandler)).toThrow("not supported");
         expect(() => app.delete("/a/{b+}", noopMapper, noopHandler)).toThrow("not supported");
+    });
+});
+
+describe("ProxyApp overlap detection", () => {
+    const app = () => new ProxyApp();
+
+    it("refuses two parameters differing only in name, which is a duplicate route", () => {
+        const a = app();
+        a.get("/orders/{orderId}", noopMapper, noopHandler);
+
+        expect(() => a.get("/orders/{id}", noopMapper, noopHandler)).toThrow("it overlaps");
+    });
+
+    it("refuses the exact same route twice, and says so plainly", () => {
+        const a = app();
+        a.get("/orders/{orderId}", noopMapper, noopHandler);
+
+        expect(() => a.get("/orders/{orderId}", noopMapper, noopHandler)).toThrow(
+            "lambda-router: cannot register GET /orders/{orderId} — it is already registered."
+        );
+    });
+
+    it("allows two different literals in the same position", () => {
+        const a = app();
+        a.get("/orders/new", noopMapper, noopHandler);
+
+        expect(() => a.get("/orders/draft", noopMapper, noopHandler)).not.toThrow();
+    });
+
+    it("allows routes that differ in a later segment, even with a parameter earlier", () => {
+        const a = app();
+        a.get("/orders/{orderId}/items", noopMapper, noopHandler);
+
+        // Nothing can match both: the last segment is two different literals.
+        expect(() => a.get("/orders/new/history", noopMapper, noopHandler)).not.toThrow();
+    });
+
+    it("allows routes with different segment counts", () => {
+        const a = app();
+        a.get("/orders/{orderId}", noopMapper, noopHandler);
+
+        expect(() => a.get("/orders/{orderId}/items", noopMapper, noopHandler)).not.toThrow();
+        expect(() => a.get("/orders", noopMapper, noopHandler)).not.toThrow();
+    });
+
+    it("scopes the check to one method, so the same path under another verb is fine", () => {
+        const a = app();
+        a.get("/orders/{orderId}", noopMapper, noopHandler);
+
+        expect(() => a.post("/orders/new", noopMapper, noopHandler)).not.toThrow();
+        expect(() => a.put("/orders/{orderId}", noopMapper, noopHandler)).not.toThrow();
+    });
+
+    it("leaves matching order-independent, since no two routes can both match", () => {
+        const a = app();
+        a.get("/orders/{orderId}", noopMapper, noopHandler);
+        a.get("/orders/{orderId}/items", noopMapper, noopHandler);
+        a.get("/customers/{customerId}", noopMapper, noopHandler);
+
+        expect(a.getHandler("GET", "/orders/o1")?.path).toBe("/orders/{orderId}");
+        expect(a.getHandler("GET", "/orders/o1/items")?.path).toBe("/orders/{orderId}/items");
+        expect(a.getHandler("GET", "/customers/c1")?.path).toBe("/customers/{customerId}");
     });
 });
