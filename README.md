@@ -173,8 +173,10 @@ The match path comes from `event.pathParameters.proxy` — the remainder API Gat
 `{proxy+}` integration already provides — never from stripping a prefix off `event.path`,
 which is fragile against stage names, base-path mappings and encoding. Captured
 parameters are merged into `pathParameters` before the request mapper runs, so mappers
-read `event.pathParameters!.orderId` exactly as they do under resource routing. Any
-parameters the Gateway supplied itself (`teamId`, say) are still there too.
+read `event.pathParameters!.orderId` exactly as they do under resource routing. The team
+id is a literal segment of that team's own registered resource rather than a path
+parameter, so `proxy` is normally all the Gateway supplies; extracted parameters are
+merged over it rather than replacing it.
 
 Metrics work the same way, with one deliberate detail: `resource` carries the **registered
 route** (`/orders/{orderId}/receipt`), not the concrete path. Reporting the concrete path
