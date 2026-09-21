@@ -115,11 +115,55 @@ export const apiHandler = createApiHandler<AuthContext>({
 Throwing from `onMetrics` is caught and logged rather than propagated: instrumentation
 must never turn a 200 into a 500.
 
+## Proxy routing
+
+The `App` above dispatches on `event.resource`, which requires one real API Gateway
+resource per route. For a service sitting behind a single greedy resource — say
+`/plugin/<team-id>/{proxy+}`, so a team can add endpoints without ever touching the
+Gateway again — `event.resource` is the same string for every request and cannot be used
+to dispatch at all.
+
+`ProxyApp` and `createProxyApiHandler` cover that case. They are separate from
+`App`/`createApiHandler` rather than a mode on them, so nothing about the resource-routing
+path changes, and a service that never imports them does not pay for them.
+
+Registration is identical, including the same `{param}` convention:
+
+```ts
+import { ProxyApp, createProxyApiHandler } from "@superk-in/lambda-router";
+
+const app = new ProxyApp();
+app.get("/orders/new", new NewOrderMapper(), createOrder);
+app.get("/orders/{orderId}", new GetOrderMapper(), getOrder);
+
+export const apiHandler = createProxyApiHandler<AuthContext>({ app, authorizeRequest });
+```
+
+Matching uses [`path-to-regexp`](https://github.com/pillarjs/path-to-regexp), pinned as a
+direct dependency so an unrelated upgrade elsewhere can never silently change how every
+route matches.
+
+**Matching is first-registered-wins**, the same rule Express applies. There is no
+literal-beats-parameter precedence: `/orders/{orderId}` will match `/orders/new`
+perfectly happily. Register the literal route first, as above.
+
+The match path comes from `event.pathParameters.proxy` — the remainder API Gateway's
+`{proxy+}` integration already provides — never from stripping a prefix off `event.path`,
+which is fragile against stage names, base-path mappings and encoding. Captured
+parameters are merged into `pathParameters` before the request mapper runs, so mappers
+read `event.pathParameters!.orderId` exactly as they do under resource routing. Any
+parameters the Gateway supplied itself (`teamId`, say) are still there too.
+
+Metrics work the same way, with one deliberate detail: `resource` carries the **registered
+route** (`/orders/{orderId}/receipt`), not the concrete path. Reporting the concrete path
+would put every order id on its own series and make `stats by resource` useless.
+
 ## What this is not (yet)
 
-This release covers the "one real API Gateway resource per route" style shown above. A
-second routing mode for services sitting behind a single greedy `{proxy+}` resource is
-planned but not included here.
+The dispatchers read AWS API Gateway proxy events directly. Supporting another runtime
+would mean factoring out the small "pull `{method, path}` out of the raw event" step
+behind an adapter. That is a deliberate extension point, not built here — the need today
+is AWS Lambda only.
 
 ## License
 

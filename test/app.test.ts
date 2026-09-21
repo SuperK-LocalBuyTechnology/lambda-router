@@ -1,4 +1,4 @@
-import { App } from "../src/app";
+import { App, HTTPMethod } from "../src/app";
 
 describe("App", () => {
     const requestMapper = { requestMapper: (event: any) => event };
@@ -51,6 +51,6 @@ describe("App", () => {
     it("dispatches getHandler by method case-insensitively", () => {
         const app = new App();
         app.post("/widgets", requestMapper, handler);
-        expect(app.getHandler("post", "/widgets")?.handler).toBe(handler);
+        expect(app.getHandler("post" as HTTPMethod, "/widgets")?.handler).toBe(handler);
     });
 });
