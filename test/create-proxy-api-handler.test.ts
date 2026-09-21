@@ -4,15 +4,19 @@ import { ErrorObject } from "../src/handler-types";
 import { ProxyApp } from "../src/proxy-app";
 import { APIOptions } from "../src/types";
 
-/** Mirrors what API Gateway sends for `/plugin/{teamId}/{proxy+}`. */
+/**
+ * Mirrors what API Gateway sends for `/plugin/<team-id>/{proxy+}`. The team id is a
+ * literal segment of that team's own registered resource, not a path parameter, so
+ * `proxy` is the only parameter the Gateway supplies.
+ */
 function proxyEvent(proxy: string, overrides: Partial<APIGatewayProxyEvent> = {}): APIGatewayProxyEvent {
     return {
         httpMethod: "GET",
-        resource: "/plugin/{teamId}/{proxy+}",
+        resource: "/plugin/team-a/{proxy+}",
         path: `/plugin/team-a/${proxy}`,
         headers: {},
         multiValueHeaders: {},
-        pathParameters: { teamId: "team-a", proxy },
+        pathParameters: { proxy },
         queryStringParameters: null,
         multiValueQueryStringParameters: null,
         stageVariables: null,
@@ -48,10 +52,9 @@ describe("createProxyApiHandler", () => {
 
         const result = await handler(proxyEvent("stores/s1/orders/o2"), fakeContext, undefined as never);
 
-        // The gateway's own parameters survive alongside the extracted ones, so a team's
-        // handlers can still read teamId.
+        // The extracted parameters are merged over what the Gateway sent, rather than
+        // replacing it, so `proxy` is still readable alongside them.
         expect(JSON.parse(result!.body).seen).toEqual({
-            teamId: "team-a",
             proxy: "stores/s1/orders/o2",
             storeId: "s1",
             orderId: "o2",
@@ -183,11 +186,7 @@ describe("createProxyApiHandler", () => {
         app.get("/", { requestMapper: () => ({}) }, async () => ({ root: true }));
         const handler = createProxyApiHandler({ app, authorizeRequest: async () => ({}), onMetrics: () => {} });
 
-        const result = await handler(
-            proxyEvent("", { pathParameters: { teamId: "team-a" } }),
-            fakeContext,
-            undefined as never
-        );
+        const result = await handler(proxyEvent("", { pathParameters: null }), fakeContext, undefined as never);
 
         expect(result?.statusCode).toBe(200);
         expect(JSON.parse(result!.body)).toEqual({ root: true });

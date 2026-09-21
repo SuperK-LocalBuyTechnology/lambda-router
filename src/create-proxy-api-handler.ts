@@ -33,11 +33,13 @@ export interface CreateProxyApiHandlerOptions<TAuthCtx> {
  * Dispatcher for a service behind a single greedy API Gateway resource, typically
  * `/plugin/<team-id>/{proxy+}`.
  *
+ * The team id is a literal segment of that team's own registered resource, not a path
+ * parameter, so `proxy` is normally the only parameter the Gateway supplies.
+ *
  * The match path comes from `event.pathParameters.proxy` — the remainder API Gateway's
  * `{proxy+}` integration already provides — never from stripping a prefix off
  * `event.path`, which would be fragile against stage names, base-path mappings and
- * encoding. Any other path parameters the Gateway supplies (`teamId`, say) stay visible
- * to handlers through the enriched event.
+ * encoding.
  */
 export function createProxyApiHandler<TAuthCtx>({
     app,
