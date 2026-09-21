@@ -90,11 +90,10 @@ export class ProxyApp {
         handler: Handler<TRequest, TResponse, TAuthCtx>,
         options: APIOptions
     ) {
-        const pattern = path.replace(/\{([^/}]+)\}/g, ":$1");
         this.routes.push({
             method,
             path,
-            matcher: match(pattern),
+            matcher: compileMatcher(method, path),
             requestMapper: requestMapper as RequestMapper<unknown>,
             handler: handler as unknown as Handler<never, unknown, never>,
             options,
@@ -133,6 +132,69 @@ export class ProxyApp {
     /** Every registered route, in registration order. Useful for diagnostics and listings. */
     listRoutes(): { method: HTTPMethod; path: string; options: APIOptions }[] {
         return this.routes.map(({ method, path, options }) => ({ method, path, options }));
+    }
+}
+
+const PARAM_NAME = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
+const RAW_PARAM_SYNTAX = /:[A-Za-z_$][A-Za-z0-9_$]*/;
+
+/**
+ * Validates a route as the caller wrote it, then compiles it.
+ *
+ * Routes are registered at module load, so anything that throws here takes the Lambda
+ * down at cold start and 502s every request. Reporting against the translated pattern
+ * would name a string the caller never wrote (`{path+}` surfacing as `:path+`), so every
+ * message quotes the original and says what to write instead.
+ */
+function compileMatcher(method: HTTPMethod, path: string): MatchFunction<Partial<Record<string, string | string[]>>> {
+    const route = `${method} ${path}`;
+
+    for (const [group, name] of path.matchAll(/\{([^}]*)\}/g)) {
+        if (PARAM_NAME.test(name)) {
+            continue;
+        }
+        if (name.startsWith("*")) {
+            throw new Error(
+                `lambda-router: cannot register ${route}. "${group}" would match any number of path ` +
+                    `segments, which is not supported. Use {${name.slice(1) || "name"}} to capture exactly one.`
+            );
+        }
+        const modified = name.match(/^([A-Za-z_$][A-Za-z0-9_$]*)[+*?]$/);
+        if (modified) {
+            throw new Error(
+                `lambda-router: cannot register ${route}. "${group}" is not supported — the +, * and ? ` +
+                    `modifiers do not exist in this router. Write "{${modified[1]}}" to match exactly one ` +
+                    `path segment.`
+            );
+        }
+        throw new Error(
+            `lambda-router: cannot register ${route}. "${group}" is not a valid parameter. Write {name}, ` +
+                `where name starts with a letter and contains only letters, digits or underscores.`
+        );
+    }
+
+    const rawParam = path.match(RAW_PARAM_SYNTAX);
+    if (rawParam) {
+        const suggestion = path.replace(/:([A-Za-z_$][A-Za-z0-9_$]*)/g, "{$1}");
+        throw new Error(
+            `lambda-router: cannot register ${route}. Routes use {name}, not ${rawParam[0]} — ` +
+                `write "${suggestion}".`
+        );
+    }
+
+    if (path.includes("*")) {
+        throw new Error(
+            `lambda-router: cannot register ${route}. Wildcards are not supported. Use {name} to capture ` +
+                `one path segment, for example "/files/{name}".`
+        );
+    }
+
+    const pattern = path.replace(/\{([^/}]+)\}/g, ":$1");
+    try {
+        return match(pattern);
+    } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        throw new Error(`lambda-router: cannot register ${route}. ${detail}`);
     }
 }
 

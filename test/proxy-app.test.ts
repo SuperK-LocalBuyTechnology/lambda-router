@@ -89,3 +89,57 @@ describe("ProxyApp", () => {
         expect(app.listRoutes().map((route) => `${route.method} ${route.path}`)).toEqual(["GET /a", "POST /b/{id}"]);
     });
 });
+
+describe("ProxyApp route validation", () => {
+    // Routes register at module load, so a bad one takes the Lambda down at cold start
+    // and 502s every request. The message has to name the route as written and say what
+    // to write instead.
+    const register = (path: string) => () => new ProxyApp().get(path, noopMapper, noopHandler);
+
+    it("rejects the API Gateway {proxy+} spelling with the route as the caller wrote it", () => {
+        expect(register("/files/{path+}")).toThrow(
+            'lambda-router: cannot register GET /files/{path+}. "{path+}" is not supported — the +, * and ? ' +
+                'modifiers do not exist in this router. Write "{path}" to match exactly one path segment.'
+        );
+    });
+
+    it("rejects the other removed modifiers too", () => {
+        expect(register("/files/{path*}")).toThrow('Write "{path}"');
+        expect(register("/files/{path?}")).toThrow('Write "{path}"');
+    });
+
+    it("rejects a brace wildcard, suggesting the single-segment form", () => {
+        expect(register("/files/{*rest}")).toThrow(
+            'lambda-router: cannot register GET /files/{*rest}. "{*rest}" would match any number of path ' +
+                "segments, which is not supported. Use {rest} to capture exactly one."
+        );
+    });
+
+    it("rejects a bare wildcard, which path-to-regexp would otherwise accept silently", () => {
+        expect(register("/files/*rest")).toThrow("Wildcards are not supported");
+    });
+
+    it("rejects an empty parameter, which path-to-regexp treats as a literal", () => {
+        expect(register("/files/{}")).toThrow('"{}" is not a valid parameter');
+    });
+
+    it("rejects raw :param syntax and suggests the braced rewrite", () => {
+        expect(register("/orders/:orderId/items/:itemId")).toThrow(
+            "lambda-router: cannot register GET /orders/:orderId/items/:itemId. Routes use {name}, not " +
+                ':orderId — write "/orders/{orderId}/items/{itemId}".'
+        );
+    });
+
+    it("still accepts the supported syntax", () => {
+        expect(register("/orders/{orderId}/items/{itemId}")).not.toThrow();
+        expect(register("/orders")).not.toThrow();
+        expect(register("/")).not.toThrow();
+    });
+
+    it("validates on every verb, not just get", () => {
+        const app = new ProxyApp();
+        expect(() => app.post("/a/{b+}", noopMapper, noopHandler)).toThrow("not supported");
+        expect(() => app.put("/a/{b+}", noopMapper, noopHandler)).toThrow("not supported");
+        expect(() => app.delete("/a/{b+}", noopMapper, noopHandler)).toThrow("not supported");
+    });
+});

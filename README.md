@@ -147,6 +147,28 @@ route matches.
 literal-beats-parameter precedence: `/orders/{orderId}` will match `/orders/new`
 perfectly happily. Register the literal route first, as above.
 
+### Route syntax
+
+A route is literal segments plus `{name}` parameters, each matching exactly one path
+segment. Anything else is rejected **at registration** with a message naming the route you
+wrote and what to write instead:
+
+```ts
+app.get("/files/{path+}", mapper, handler);
+// Error: lambda-router: cannot register GET /files/{path+}. "{path+}" is not supported —
+// the +, * and ? modifiers do not exist in this router. Write "{path}" to match exactly
+// one path segment.
+
+app.get("/orders/:orderId", mapper, handler);
+// Error: ... Routes use {name}, not :orderId — write "/orders/{orderId}".
+```
+
+`{proxy+}` is the spelling API Gateway itself uses, so it is an easy thing to reach for;
+it is rejected rather than quietly mis-parsed. Wildcards and raw `path-to-regexp` syntax
+are rejected for the same reason — routes register when the module loads, so a route the
+router cannot honour would otherwise take the Lambda down at cold start and 502 every
+request.
+
 The match path comes from `event.pathParameters.proxy` — the remainder API Gateway's
 `{proxy+}` integration already provides — never from stripping a prefix off `event.path`,
 which is fragile against stage names, base-path mappings and encoding. Captured
