@@ -133,8 +133,8 @@ Registration is identical, including the same `{param}` convention:
 import { ProxyApp, createProxyApiHandler } from "@superk-in/lambda-router";
 
 const app = new ProxyApp();
-app.get("/orders/new", new NewOrderMapper(), createOrder);
 app.get("/orders/{orderId}", new GetOrderMapper(), getOrder);
+app.post("/orders", new NewOrderMapper(), createOrder);
 
 export const apiHandler = createProxyApiHandler<AuthContext>({ app, authorizeRequest });
 ```
@@ -143,9 +143,25 @@ Matching uses [`path-to-regexp`](https://github.com/pillarjs/path-to-regexp), pi
 direct dependency so an unrelated upgrade elsewhere can never silently change how every
 route matches.
 
-**Matching is first-registered-wins**, the same rule Express applies. There is no
-literal-beats-parameter precedence: `/orders/{orderId}` will match `/orders/new`
-perfectly happily. Register the literal route first, as above.
+**Routes cannot overlap.** `path-to-regexp` has no literal-beats-parameter precedence, so
+`/orders/{orderId}` would match `/orders/new` perfectly happily and the winner would come
+down to which line appears first in a registry file. Rather than depend on that,
+registering a route that could match the same request as an existing one throws:
+
+```ts
+app.get("/orders/{orderId}", mapper, getOrder);
+app.get("/orders/new", mapper, createOrder);
+// Error: lambda-router: cannot register GET /orders/new — it overlaps
+// GET /orders/{orderId}, which is already registered. A request can match both, so which
+// one handles it would depend on the order these were registered in. Give them paths
+// that cannot match the same request.
+```
+
+This is stricter than API Gateway, which allows that pair and prefers the literal. Two
+routes overlap only when they have the same number of segments and no position holds two
+different literals, so `/orders/new` and `/orders/draft` are fine, and so are
+`/orders/{orderId}/items` and `/orders/new/history`. The check is per method: the same
+path under a different verb is unaffected. Matching is therefore order-independent.
 
 ### Route syntax
 
