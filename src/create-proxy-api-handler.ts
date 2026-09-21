@@ -1,5 +1,4 @@
 import { APIGatewayProxyEvent, APIGatewayProxyHandler, APIGatewayProxyResult, Context } from "aws-lambda";
-import { App, HTTPMethod } from "./app";
 import {
     RequestMetrics,
     RequestOutcome,
@@ -9,16 +8,17 @@ import {
     timed,
 } from "./dispatch-shared";
 import { ErrorObject } from "./handler-types";
+import { ProxyApp } from "./proxy-app";
 import { APIOptions } from "./types";
 
-export type AuthorizeRequest<TAuthCtx> = (
+export type AuthorizeProxyRequest<TAuthCtx> = (
     event: APIGatewayProxyEvent,
     options: APIOptions
 ) => Promise<TAuthCtx | ErrorObject>;
 
-export interface CreateApiHandlerOptions<TAuthCtx> {
-    app: App;
-    authorizeRequest: AuthorizeRequest<TAuthCtx>;
+export interface CreateProxyApiHandlerOptions<TAuthCtx> {
+    app: ProxyApp;
+    authorizeRequest: AuthorizeProxyRequest<TAuthCtx>;
     logEvent?: (event: APIGatewayProxyEvent) => void;
     formatError?: (error: unknown) => APIGatewayProxyResult;
     /**
@@ -29,32 +29,44 @@ export interface CreateApiHandlerOptions<TAuthCtx> {
     onMetrics?: (metrics: RequestMetrics) => void;
 }
 
-export function createApiHandler<TAuthCtx>({
+/**
+ * Dispatcher for a service behind a single greedy API Gateway resource, typically
+ * `/plugin/<team-id>/{proxy+}`.
+ *
+ * The match path comes from `event.pathParameters.proxy` — the remainder API Gateway's
+ * `{proxy+}` integration already provides — never from stripping a prefix off
+ * `event.path`, which would be fragile against stage names, base-path mappings and
+ * encoding. Any other path parameters the Gateway supplies (`teamId`, say) stay visible
+ * to handlers through the enriched event.
+ */
+export function createProxyApiHandler<TAuthCtx>({
     app,
     authorizeRequest,
     logEvent,
     formatError = defaultFormatError,
     onMetrics = defaultOnMetrics,
-}: CreateApiHandlerOptions<TAuthCtx>): APIGatewayProxyHandler {
+}: CreateProxyApiHandlerOptions<TAuthCtx>): APIGatewayProxyHandler {
     return async (event: APIGatewayProxyEvent, context: Context): Promise<APIGatewayProxyResult> => {
         const startedAt = Date.now();
+        const path = "/" + (event.pathParameters?.proxy ?? "");
         let authorizeMs: number | undefined;
         let handlerMs: number | undefined;
         let outcome: RequestOutcome = "unhandled_error";
         let statusCode = 500;
+        // Falls back to the request path so a 404 is still attributable; a path that
+        // matched no route cannot inflate cardinality for a route that exists.
+        let resource = path;
 
         try {
             logEvent?.(event);
 
-            const matched = app.getHandler(event.httpMethod as HTTPMethod, event.resource);
+            const matched = app.getHandler(event.httpMethod, path);
             if (!matched) {
                 outcome = "not_found";
                 statusCode = 404;
-                return {
-                    statusCode,
-                    body: JSON.stringify({ message: `There is no handler registered for this ${event.resource}.` }),
-                };
+                return { statusCode, body: JSON.stringify({ message: `No handler for ${path}` }) };
             }
+            resource = matched.path;
 
             const authResult = await timed(
                 () => authorizeRequest(event, matched.options),
@@ -66,7 +78,11 @@ export function createApiHandler<TAuthCtx>({
                 return errorResponse(authResult);
             }
 
-            const request = matched.requestMapper.requestMapper(event);
+            const enrichedEvent: APIGatewayProxyEvent = {
+                ...event,
+                pathParameters: { ...event.pathParameters, ...matched.pathParameters },
+            };
+            const request = matched.requestMapper.requestMapper(enrichedEvent);
             const result = await timed(
                 () => matched.handler(request, authResult, context),
                 (ms) => (handlerMs = ms)
@@ -94,7 +110,7 @@ export function createApiHandler<TAuthCtx>({
             try {
                 onMetrics({
                     method: event.httpMethod,
-                    resource: event.resource,
+                    resource,
                     statusCode,
                     outcome,
                     authorizeMs,
@@ -103,7 +119,7 @@ export function createApiHandler<TAuthCtx>({
                     requestId: context.awsRequestId,
                 });
             } catch (metricsError) {
-                console.error("createApiHandler: onMetrics threw", metricsError);
+                console.error("createProxyApiHandler: onMetrics threw", metricsError);
             }
         }
     };
