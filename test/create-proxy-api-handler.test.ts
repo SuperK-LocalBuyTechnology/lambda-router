@@ -191,4 +191,119 @@ describe("createProxyApiHandler", () => {
         expect(result?.statusCode).toBe(200);
         expect(JSON.parse(result!.body)).toEqual({ root: true });
     });
+
+    describe("responseMapper", () => {
+        const domainObject = { id: "w1", name: "Widget", internalCost: 42, supplierEmail: "s@x.com" };
+        const pick = { responseMapper: ({ id, name }: typeof domainObject) => ({ id, name }) };
+
+        it("sends only what the mapper returns", async () => {
+            const app = new ProxyApp();
+            app.get("/widgets", { requestMapper: () => ({}) }, async () => domainObject, {
+                authType: "ALLOW_UNAUTHENTICATED",
+                responseMapper: pick,
+            });
+            const handler = createProxyApiHandler({ app, authorizeRequest: async () => ({}), onMetrics: () => {} });
+
+            const result = await handler(proxyEvent("widgets"), fakeContext, undefined as never);
+
+            expect(result?.statusCode).toBe(200);
+            expect(JSON.parse(result!.body)).toEqual({ id: "w1", name: "Widget" });
+        });
+
+        it("passes the authorizer context to the mapper", async () => {
+            const app = new ProxyApp();
+            const responseMapper = jest.fn((_r: typeof domainObject, auth: { admin: boolean }) =>
+                auth.admin ? { cost: 42 } : { cost: null }
+            );
+            app.get("/widgets", { requestMapper: () => ({}) }, async () => domainObject, {
+                authType: "ALLOW_UNAUTHENTICATED",
+                responseMapper: { responseMapper },
+            });
+            const handler = createProxyApiHandler({
+                app,
+                authorizeRequest: async () => ({ admin: true }),
+                onMetrics: () => {},
+            });
+
+            const result = await handler(proxyEvent("widgets"), fakeContext, undefined as never);
+
+            expect(responseMapper).toHaveBeenCalledWith(domainObject, { admin: true });
+            expect(JSON.parse(result!.body)).toEqual({ cost: 42 });
+        });
+
+        it("awaits an async mapper", async () => {
+            const app = new ProxyApp();
+            app.get("/widgets", { requestMapper: () => ({}) }, async () => domainObject, {
+                authType: "ALLOW_UNAUTHENTICATED",
+                responseMapper: { responseMapper: async ({ id, name }: typeof domainObject) => ({ id, name }) },
+            });
+            const handler = createProxyApiHandler({ app, authorizeRequest: async () => ({}), onMetrics: () => {} });
+
+            const result = await handler(proxyEvent("widgets"), fakeContext, undefined as never);
+
+            expect(result?.statusCode).toBe(200);
+            expect(JSON.parse(result!.body)).toEqual({ id: "w1", name: "Widget" });
+        });
+
+        it("returns a generic 500 when an async mapper rejects", async () => {
+            const app = new ProxyApp();
+            app.get("/widgets", { requestMapper: () => ({}) }, async () => domainObject, {
+                authType: "ALLOW_UNAUTHENTICATED",
+                responseMapper: { responseMapper: async () => Promise.reject(new Error("boom")) },
+            });
+            const handler = createProxyApiHandler({ app, authorizeRequest: async () => ({}), onMetrics: () => {} });
+            const consoleError = jest.spyOn(console, "error").mockImplementation(() => {});
+
+            const result = await handler(proxyEvent("widgets"), fakeContext, undefined as never);
+
+            expect(result?.statusCode).toBe(500);
+            expect(result!.body).not.toContain("internalCost");
+            consoleError.mockRestore();
+        });
+
+        it("does not apply the mapper to error results", async () => {
+            const app = new ProxyApp();
+            const responseMapper = jest.fn();
+            app.get("/widgets", { requestMapper: () => ({}) }, async () => new ErrorObject(404, "nope"), {
+                authType: "ALLOW_UNAUTHENTICATED",
+                responseMapper: { responseMapper },
+            });
+            const handler = createProxyApiHandler({ app, authorizeRequest: async () => ({}), onMetrics: () => {} });
+
+            const result = await handler(proxyEvent("widgets"), fakeContext, undefined as never);
+
+            expect(result?.statusCode).toBe(404);
+            expect(responseMapper).not.toHaveBeenCalled();
+        });
+
+        it("returns a generic 500 without the raw result when the mapper throws", async () => {
+            const app = new ProxyApp();
+            app.get("/widgets", { requestMapper: () => ({}) }, async () => domainObject, {
+                authType: "ALLOW_UNAUTHENTICATED",
+                responseMapper: {
+                    responseMapper: () => {
+                        throw new Error("boom");
+                    },
+                },
+            });
+            const handler = createProxyApiHandler({ app, authorizeRequest: async () => ({}), onMetrics: () => {} });
+            const consoleError = jest.spyOn(console, "error").mockImplementation(() => {});
+
+            const result = await handler(proxyEvent("widgets"), fakeContext, undefined as never);
+
+            expect(result?.statusCode).toBe(500);
+            expect(result!.body).not.toContain("internalCost");
+            consoleError.mockRestore();
+        });
+
+        it("sends the result unchanged when no mapper is registered", async () => {
+            const app = new ProxyApp();
+            app.get("/widgets", { requestMapper: () => ({}) }, async () => domainObject);
+            const handler = createProxyApiHandler({ app, authorizeRequest: async () => ({}), onMetrics: () => {} });
+
+            const result = await handler(proxyEvent("widgets"), fakeContext, undefined as never);
+
+            expect(JSON.parse(result!.body)).toEqual(domainObject);
+        });
+    });
 });

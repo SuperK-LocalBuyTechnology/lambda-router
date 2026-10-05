@@ -1,5 +1,6 @@
 import { APIGatewayProxyResult } from "aws-lambda";
 import { ErrorObject } from "./handler-types";
+import { APIOptions } from "./types";
 
 /**
  * How a request ended. Distinguishes the four failure modes so a metrics query
@@ -49,4 +50,13 @@ export async function timed<T>(fn: () => Promise<T>, record: (ms: number) => voi
     } finally {
         record(Date.now() - startedAt);
     }
+}
+
+/** Applies the route's `responseMapper`, if it has one, to a successful handler result. */
+export async function mapResponse<TResponse, TAuthCtx>(
+    options: APIOptions<TResponse, TAuthCtx>,
+    result: TResponse,
+    authorizerContext: TAuthCtx
+): Promise<unknown> {
+    return options.responseMapper ? options.responseMapper.responseMapper(result, authorizerContext) : result;
 }

@@ -115,6 +115,58 @@ export const apiHandler = createApiHandler<AuthContext>({
 Throwing from `onMetrics` is caught and logged rather than propagated: instrumentation
 must never turn a 200 into a 500.
 
+## Response mapping
+
+Handlers can return rich domain objects and let a route's `responseMapper` decide what the
+client sees. The mapper is an allowlist: a field is sent only if the mapper names it, so
+internal fields never leak by accident and payloads stay small. It receives the handler's
+result and the authorizer context, so the shape can depend on the caller.
+
+```ts
+app.get("/widgets/{widgetId}", new GetWidgetMapper(), getWidgetHandler, {
+    responseMapper: {
+        responseMapper: (widget, auth) => ({
+            widgetId: widget.widgetId,
+            name: widget.name,
+            ...(auth.isAdmin && { internalCost: widget.internalCost }),
+        }),
+    },
+});
+```
+
+`authType` is optional in `APIOptions` and defaults to `ALLOW_AUTHENTICATED_CLIENTS`, so a route
+can set only a `responseMapper`. Setting `allowedClients` without `authType` throws at registration,
+because it would silently default to every client. A mapper may be async (it is awaited). The mapper itself is optional; without one the result is sent as returned. Only successful results are
+mapped (an `ErrorObject` is returned as is), and a throwing mapper yields the generic
+`formatError` 500 rather than the unmapped data. It works in both `App` and `ProxyApp`.
+
+### With Zod
+
+A Zod object schema is a ready-made allowlist: `parse` drops every key the schema does not
+declare, and throws (so the client gets the generic 500, never the raw data) if the handler
+returned something that does not match. Nested objects need their own `z.object`; a bare
+`z.any()` or `z.record()` would pass the whole nested value through.
+
+```ts
+import { z } from "zod";
+
+const OrderDto = z.object({
+    orderId: z.string(),
+    status: z.string(),
+    customer: z.object({ name: z.string() }), // customer.email, customer.phone are dropped
+    items: z.array(z.object({ sku: z.string(), quantity: z.number() })), // unit cost etc. dropped
+});
+
+app.get("/orders/{orderId}", new GetOrderMapper(), getOrder, {
+    responseMapper: { responseMapper: (order) => OrderDto.parse(order) },
+});
+```
+
+Pick the schema from the authorizer context when the shape depends on the caller:
+`(order, auth) => (auth.isAdmin ? AdminOrderDto : OrderDto).parse(order)`. Avoid
+`z.strictObject` (it rejects any extra key, so a rich domain object becomes a 500) and
+`z.looseObject` (it keeps unknown keys, defeating the allowlist).
+
 ## Proxy routing
 
 The `App` above dispatches on `event.resource`, which requires one real API Gateway

@@ -26,6 +26,33 @@ describe("App", () => {
         expect(app.getHandler("GET", "/widgets")?.options).toEqual({ authType: "ALLOW_AUTHENTICATED_CLIENTS" });
     });
 
+    it("defaults authType when options are passed without one", () => {
+        const app = new App();
+        const responseMapper = { responseMapper: (r: unknown) => r };
+        app.get("/widgets", requestMapper, handler, { responseMapper });
+        expect(app.getHandler("GET", "/widgets")?.options).toEqual({
+            authType: "ALLOW_AUTHENTICATED_CLIENTS",
+            responseMapper,
+        });
+    });
+
+    it("rejects allowedClients without an authType", () => {
+        const app = new App();
+        expect(() => app.get("/widgets", requestMapper, handler, { allowedClients: ["CmsClient"] })).toThrow(
+            /allowedClients is set but authType is not/
+        );
+    });
+
+    it("accepts allowedClients with ALLOW_SPECIFIC_CLIENTS", () => {
+        const app = new App();
+        expect(() =>
+            app.get("/widgets", requestMapper, handler, {
+                authType: "ALLOW_SPECIFIC_CLIENTS",
+                allowedClients: ["CmsClient"],
+            })
+        ).not.toThrow();
+    });
+
     it("honors explicitly passed options", () => {
         const app = new App();
         app.get("/widgets", requestMapper, handler, { authType: "ALLOW_UNAUTHENTICATED" });

@@ -1,10 +1,11 @@
 import { Handler } from "./handler-types";
 import { RequestMapper } from "./request-mapper";
+import { ResponseMapper } from "./response-mapper";
 
 export type APIMap<TRequest, TResponse, TAuthCtx> = {
     handler: Handler<TRequest, TResponse, TAuthCtx>;
     requestMapper: RequestMapper<TRequest>;
-    options: APIOptions;
+    options: APIOptions<TResponse, TAuthCtx>;
 };
 
 export type APIHandlerMap = {
@@ -22,7 +23,25 @@ export const API_GATEWAY_NAMED_AUTHZ_TYPES = [
 export type APIGatewayNamedAuthZType = (typeof API_GATEWAY_NAMED_AUTHZ_TYPES)[number];
 export type APIGatewayAuthZType = APIGatewayNamedAuthZType | (string & {});
 
-export type APIOptions = {
-    authType: APIGatewayAuthZType;
+export type APIOptions<TResponse = any, TAuthCtx = any> = {
+    /** Defaults to `ALLOW_AUTHENTICATED_CLIENTS`. */
+    authType?: APIGatewayAuthZType;
     allowedClients?: string[];
+    /** Trims/reshapes the handler's successful result before it is sent. Absent = sent as returned. */
+    responseMapper?: ResponseMapper<TResponse, unknown, TAuthCtx>;
 };
+
+const DEFAULT_AUTH_TYPE: APIGatewayNamedAuthZType = "ALLOW_AUTHENTICATED_CLIENTS";
+
+/** Fills in the default `authType` (rejecting `allowedClients` without one, which would silently open the route), so a stored route's options always carry one even if only e.g. `responseMapper` was passed. */
+export function resolveOptions<TResponse, TAuthCtx>(
+    options: APIOptions<TResponse, TAuthCtx> = {}
+): APIOptions<TResponse, TAuthCtx> {
+    if (options.allowedClients && options.authType === undefined) {
+        throw new Error(
+            `lambda-router: allowedClients is set but authType is not, so the route would default to ` +
+                `${DEFAULT_AUTH_TYPE} and ignore allowedClients. Pass authType: "ALLOW_SPECIFIC_CLIENTS".`
+        );
+    }
+    return { ...options, authType: options.authType ?? DEFAULT_AUTH_TYPE };
+}
