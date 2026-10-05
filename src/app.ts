@@ -1,8 +1,7 @@
 import { Handler } from "./handler-types";
 import { RequestMapper } from "./request-mapper";
-import { APIHandlerMap, APIMap, APIOptions } from "./types";
+import { APIHandlerMap, APIMap, APIOptions, resolveOptions } from "./types";
 
-const DEFAULT_OPTIONS: Readonly<APIOptions> = Object.freeze({ authType: "ALLOW_AUTHENTICATED_CLIENTS" });
 export type HTTPMethod = "GET" | "POST" | "PUT" | "DELETE";
 
 export class App {
@@ -22,36 +21,36 @@ export class App {
         path: string,
         requestMapper: RequestMapper<TRequest>,
         handler: Handler<TRequest, TResponse, TAuthCtx>,
-        options: APIOptions = DEFAULT_OPTIONS
+        options?: APIOptions<TResponse, TAuthCtx>
     ) {
-        this.APIS.GET[path] = { handler, requestMapper, options };
+        this.APIS.GET[path] = { handler, requestMapper, options: resolveOptions(options) };
     }
 
     post<TRequest, TResponse, TAuthCtx = unknown>(
         path: string,
         requestMapper: RequestMapper<TRequest>,
         handler: Handler<TRequest, TResponse, TAuthCtx>,
-        options: APIOptions = DEFAULT_OPTIONS
+        options?: APIOptions<TResponse, TAuthCtx>
     ) {
-        this.APIS.POST[path] = { handler, requestMapper, options };
+        this.APIS.POST[path] = { handler, requestMapper, options: resolveOptions(options) };
     }
 
     put<TRequest, TResponse, TAuthCtx = unknown>(
         path: string,
         requestMapper: RequestMapper<TRequest>,
         handler: Handler<TRequest, TResponse, TAuthCtx>,
-        options: APIOptions = DEFAULT_OPTIONS
+        options?: APIOptions<TResponse, TAuthCtx>
     ) {
-        this.APIS.PUT[path] = { handler, requestMapper, options };
+        this.APIS.PUT[path] = { handler, requestMapper, options: resolveOptions(options) };
     }
 
     delete<TRequest, TResponse, TAuthCtx = unknown>(
         path: string,
         requestMapper: RequestMapper<TRequest>,
         handler: Handler<TRequest, TResponse, TAuthCtx>,
-        options: APIOptions = DEFAULT_OPTIONS
+        options?: APIOptions<TResponse, TAuthCtx>
     ) {
-        this.APIS.DELETE[path] = { handler, requestMapper, options };
+        this.APIS.DELETE[path] = { handler, requestMapper, options: resolveOptions(options) };
     }
 
     getHandler<TRequest, TResponse, TAuthCtx>(

@@ -81,6 +81,34 @@ describe("ProxyApp", () => {
         expect(app.getHandler("GET", "/closed")?.options.authType).toBe("ALLOW_AUTHENTICATED_CLIENTS");
     });
 
+    it("defaults authType when options are passed without one", () => {
+        const app = new ProxyApp();
+        const responseMapper = { responseMapper: (r: unknown) => r };
+        app.get("/mapped", noopMapper, noopHandler, { responseMapper });
+
+        expect(app.getHandler("GET", "/mapped")?.options).toEqual({
+            authType: "ALLOW_AUTHENTICATED_CLIENTS",
+            responseMapper,
+        });
+    });
+
+    it("rejects allowedClients without an authType", () => {
+        const app = new ProxyApp();
+        expect(() => app.get("/widgets", noopMapper, noopHandler, { allowedClients: ["CmsClient"] })).toThrow(
+            /allowedClients is set but authType is not/
+        );
+    });
+
+    it("accepts allowedClients with ALLOW_SPECIFIC_CLIENTS", () => {
+        const app = new ProxyApp();
+        expect(() =>
+            app.get("/widgets", noopMapper, noopHandler, {
+                authType: "ALLOW_SPECIFIC_CLIENTS",
+                allowedClients: ["CmsClient"],
+            })
+        ).not.toThrow();
+    });
+
     it("lists routes in registration order", () => {
         const app = new ProxyApp();
         app.get("/a", noopMapper, noopHandler);

@@ -5,6 +5,7 @@ import {
     defaultFormatError,
     defaultOnMetrics,
     errorResponse,
+    mapResponse,
     timed,
 } from "./dispatch-shared";
 import { ErrorObject } from "./handler-types";
@@ -97,7 +98,7 @@ export function createProxyApiHandler<TAuthCtx>({
 
             outcome = "success";
             statusCode = 200;
-            return { statusCode, body: JSON.stringify(result) };
+            return { statusCode, body: JSON.stringify(await mapResponse(matched.options, result, authResult)) };
         } catch (error) {
             if (ErrorObject.isErrorObject(error)) {
                 outcome = "handler_error";

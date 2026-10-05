@@ -2,9 +2,7 @@ import { MatchFunction, match } from "path-to-regexp";
 import { HTTPMethod } from "./app";
 import { Handler } from "./handler-types";
 import { RequestMapper } from "./request-mapper";
-import { APIOptions } from "./types";
-
-const DEFAULT_OPTIONS: Readonly<APIOptions> = Object.freeze({ authType: "ALLOW_AUTHENTICATED_CLIENTS" });
+import { APIOptions, resolveOptions } from "./types";
 
 interface ProxyRoute {
     method: HTTPMethod;
@@ -20,7 +18,7 @@ export interface MatchedProxyRoute<TRequest, TResponse, TAuthCtx> {
     path: string;
     requestMapper: RequestMapper<TRequest>;
     handler: Handler<TRequest, TResponse, TAuthCtx>;
-    options: APIOptions;
+    options: APIOptions<TResponse, TAuthCtx>;
     pathParameters: Record<string, string>;
 }
 
@@ -51,7 +49,7 @@ export class ProxyApp {
         path: string,
         requestMapper: RequestMapper<TRequest>,
         handler: Handler<TRequest, TResponse, TAuthCtx>,
-        options: APIOptions = DEFAULT_OPTIONS
+        options?: APIOptions<TResponse, TAuthCtx>
     ) {
         this.register("GET", path, requestMapper, handler, options);
     }
@@ -60,7 +58,7 @@ export class ProxyApp {
         path: string,
         requestMapper: RequestMapper<TRequest>,
         handler: Handler<TRequest, TResponse, TAuthCtx>,
-        options: APIOptions = DEFAULT_OPTIONS
+        options?: APIOptions<TResponse, TAuthCtx>
     ) {
         this.register("POST", path, requestMapper, handler, options);
     }
@@ -69,7 +67,7 @@ export class ProxyApp {
         path: string,
         requestMapper: RequestMapper<TRequest>,
         handler: Handler<TRequest, TResponse, TAuthCtx>,
-        options: APIOptions = DEFAULT_OPTIONS
+        options?: APIOptions<TResponse, TAuthCtx>
     ) {
         this.register("PUT", path, requestMapper, handler, options);
     }
@@ -78,7 +76,7 @@ export class ProxyApp {
         path: string,
         requestMapper: RequestMapper<TRequest>,
         handler: Handler<TRequest, TResponse, TAuthCtx>,
-        options: APIOptions = DEFAULT_OPTIONS
+        options?: APIOptions<TResponse, TAuthCtx>
     ) {
         this.register("DELETE", path, requestMapper, handler, options);
     }
@@ -88,7 +86,7 @@ export class ProxyApp {
         path: string,
         requestMapper: RequestMapper<TRequest>,
         handler: Handler<TRequest, TResponse, TAuthCtx>,
-        options: APIOptions
+        options: APIOptions<TResponse, TAuthCtx> | undefined
     ) {
         const matcher = compileMatcher(method, path);
         assertNoOverlap(this.routes, method, path);
@@ -98,7 +96,7 @@ export class ProxyApp {
             matcher,
             requestMapper: requestMapper as RequestMapper<unknown>,
             handler: handler as unknown as Handler<never, unknown, never>,
-            options,
+            options: resolveOptions(options),
         });
     }
 
@@ -124,7 +122,7 @@ export class ProxyApp {
                 path: route.path,
                 requestMapper: route.requestMapper as RequestMapper<TRequest>,
                 handler: route.handler as unknown as Handler<TRequest, TResponse, TAuthCtx>,
-                options: route.options,
+                options: route.options as APIOptions<TResponse, TAuthCtx>,
                 pathParameters: toStringParams(result.params),
             };
         }
