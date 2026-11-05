@@ -1,7 +1,7 @@
 {
     "name": "@superk-in/lambda-router",
     "description": "A typed, minimal routing framework for AWS Lambda functions behind API Gateway.",
-    "version": "0.4.0",
+    "version": "0.5.0",
     "license": "MIT",
     "repository": {
         "type": "git",
@@ -71,6 +71,7 @@
         "ts-jest": "^29.2.5",
         "tsup": "^8.0.0",
         "typescript": "~5.6.2",
-        "typescript-eslint": "^8.59.2"
+        "typescript-eslint": "^8.59.2",
+        "zod": "^3.25.76"
     }
 }
