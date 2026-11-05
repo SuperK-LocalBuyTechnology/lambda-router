@@ -1,10 +1,12 @@
-import { App, ErrorObject, createApiHandler } from "../src/index";
+import { App, ErrorObject, ResponseSchemaError, createApiHandler, schemaResponseMapper } from "../src/index";
 
 describe("barrel export", () => {
     it("exposes the public API surface", () => {
         expect(typeof App).toBe("function");
         expect(typeof ErrorObject).toBe("function");
         expect(typeof createApiHandler).toBe("function");
+        expect(typeof schemaResponseMapper).toBe("function");
+        expect(typeof ResponseSchemaError).toBe("function");
     });
 
     it("App instances have the expected route-registration methods", () => {

@@ -142,12 +142,13 @@ mapped (an `ErrorObject` is returned as is), and a throwing mapper yields the ge
 
 ### With Zod
 
-A Zod object schema is a ready-made allowlist: `parse` drops every key the schema does not
-declare, and throws (so the client gets the generic 500, never the raw data) if the handler
+A Zod object schema is a ready-made allowlist: parsing drops every key the schema does not
+declare, and fails (so the client gets the generic 500, never the raw data) if the handler
 returned something that does not match. Nested objects need their own `z.object`; a bare
 `z.any()` or `z.record()` would pass the whole nested value through.
 
 ```ts
+import { schemaResponseMapper } from "@superk-in/lambda-router";
 import { z } from "zod";
 
 const OrderDto = z.object({
@@ -158,9 +159,16 @@ const OrderDto = z.object({
 });
 
 app.get("/orders/{orderId}", new GetOrderMapper(), getOrder, {
-    responseMapper: { responseMapper: (order) => OrderDto.parse(order) },
+    responseMapper: schemaResponseMapper("Order", OrderDto),
 });
 ```
+
+`schemaResponseMapper(name, schema)` accepts any schema with a Zod-style `safeParse` (Zod 3 and
+Zod 4 both fit; this package does not depend on Zod). On a mismatch it logs
+`{ msg: "RESPONSE_SCHEMA_MISMATCH", schema: name, issues: [{ path, code }] }` (field paths only,
+never values) and throws a `ResponseSchemaError`, so the client gets the generic 500.
+It parses synchronously, so async refinements (`.refine(async ...)`) aren't supported: Zod
+throws on them and every request on the route fails. Keep response schemas to field selection.
 
 Pick the schema from the authorizer context when the shape depends on the caller:
 `(order, auth) => (auth.isAdmin ? AdminOrderDto : OrderDto).parse(order)`. Avoid
